@@ -1,3 +1,4 @@
+// gemScraper.js
 const puppeteer = require('puppeteer');
 
 async function fetchDefenceBids() {
@@ -65,26 +66,26 @@ async function fetchDefenceBids() {
             let hour = parseInt(hourStr, 10);
             if (meridian === 'PM' && hour !== 12) hour += 12;
             if (meridian === 'AM' && hour === 12) hour = 0;
-            return new Date(`${yyyy}-${mm}-${dd}T${String(hour).padStart(2, '0')}:${minute}:00`);
+            const date = new Date(`${yyyy}-${mm}-${dd}T${String(hour).padStart(2, '0')}:${minute}:00`);
+            return isNaN(date.getTime()) ? null : `${yyyy}-${mm}-${dd} ${String(hour).padStart(2, '0')}:${minute}:00`;
           } catch {
             return null;
           }
         };
 
         return bidLinks.map((link, i) => {
-  const bid_no = link.innerText.trim();
-  const boq = 'https://bidplus.gem.gov.in' + link.getAttribute('href');
-  const startRaw = startDates[i] || '';
-  const endRaw = endDates[i] || '';
+          const bid_no = link.innerText.trim();
+          const boq = 'https://bidplus.gem.gov.in' + link.getAttribute('href');
+          const startRaw = startDates[i] || '';
+          const endRaw = endDates[i] || '';
 
-  return {
-    bid_no,
-    boq,
-    start_date: startRaw,
-    end_date: endRaw,
-  };
-});
-
+          return {
+            bid_no,
+            boq,
+            start_date: parseDate(startRaw),
+            end_date: parseDate(endRaw),
+          };
+        });
       });
 
       bids.push(...pageBids);
@@ -101,11 +102,10 @@ async function fetchDefenceBids() {
   } catch (error) {
     console.error('Error fetching bids:', error);
     console.log('Browser left open for inspection.');
-    return []; // Don't close browser on error
+    return [];
   }
 
-  // Comment during debug if needed
-  // await browser.close();
+  // await browser.close(); // Uncomment when stable
 
   return bids;
 }

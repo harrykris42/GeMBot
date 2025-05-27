@@ -79,3 +79,5 @@ temp/
 *.bak
 *.old
 *.tmp
+.env
+.env.*
