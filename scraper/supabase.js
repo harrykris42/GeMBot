@@ -49,7 +49,10 @@ async function syncBidsToSupabase(latestBids) {
 
   const { error: insertError } = await supabase
     .from('live_bids')
-    .insert(validNewBids)
+    .upsert(validNewBids, {
+      onConflict: 'bid_no',
+      ignoreDuplicates: true,
+    })
 
   if (insertError) {
     console.error('❌ Failed to insert new bids:', insertError.message)

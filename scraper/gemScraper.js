@@ -1,9 +1,8 @@
-// gemScraper.js
 const puppeteer = require('puppeteer');
+const { syncBidsToSupabase } = require('./supabase'); // make sure this path is correct
 
 async function fetchDefenceBids() {
   const delay = ms => new Promise(res => setTimeout(res, ms));
-  const bids = [];
 
   const browser = await puppeteer.launch({
     headless: false,
@@ -16,40 +15,42 @@ async function fetchDefenceBids() {
       waitUntil: 'networkidle2',
     });
 
-    // Step 1: Click the "Ministry" tab
+    // Select filters
     await page.click('#ministry-tab');
-
-    // Step 2: Select Ministry
     await page.click('#select2-ministry-container');
     await delay(200);
     await page.click('li[id*="Ministry of Defence"]');
 
-    // Step 3: Select Organization
     await page.click('#select2-organization-container');
     await delay(200);
     await page.click('li[id*="Indian Coast Guard"]');
 
-    // Step 4: Select Department
     await page.click('#select2-department-container');
     await delay(200);
     await page.click('li[id*="Department of Defence"]');
 
-    // Step 5: Trigger search
     await delay(300);
     await page.evaluate(() => searchBid('ministry-search'));
-    await delay(300);
-    
-    // Step 6: Get total number of bids
-    const totalBids = await page.evaluate(() => {
-      const text = document.querySelector('.pos-bottom')?.innerText || '';
-      const match = text.match(/of (\d+) records/);
-      return match ? parseInt(match[1]) : 0;
-    });
+    await delay(1000);
 
-    const totalPages = Math.floor(totalBids / 10);
+    const parseDate = raw => {
+      try {
+        const match = raw.match(/(\d{2})-(\d{2})-(\d{4}) (\d{1,2}):(\d{2}) (AM|PM)/);
+        if (!match) return null;
+        const [, dd, mm, yyyy, hourStr, minute, meridian] = match;
+        let hour = parseInt(hourStr);
+        if (meridian === 'PM' && hour !== 12) hour += 12;
+        if (meridian === 'AM' && hour === 12) hour = 0;
+        return new Date(`${yyyy}-${mm}-${dd}T${String(hour).padStart(2, '0')}:${minute}:00`);
+      } catch {
+        return null;
+      }
+    };
 
-    // Step 7: Scrape bids per page
-    for (let pageNum = 0; pageNum <= totalPages; pageNum++) {
+    let currentPage = 1;
+
+    while (true) {
+      console.log(`📄 Scraping page ${currentPage}`);
       await page.waitForSelector('.bid_no_hover');
 
       const pageBids = await page.evaluate(() => {
@@ -57,57 +58,40 @@ async function fetchDefenceBids() {
         const startDates = Array.from(document.querySelectorAll('.start_date')).map(el => el.innerText.trim());
         const endDates = Array.from(document.querySelectorAll('.end_date')).map(el => el.innerText.trim());
 
-        const parseDate = (raw) => {
-          try {
-            if (!raw) return null;
-            const match = raw.match(/(\d{2})-(\d{2})-(\d{4}) (\d{1,2}):(\d{2}) (AM|PM)/);
-            if (!match) return null;
-            const [, dd, mm, yyyy, hourStr, minute, meridian] = match;
-            let hour = parseInt(hourStr, 10);
-            if (meridian === 'PM' && hour !== 12) hour += 12;
-            if (meridian === 'AM' && hour === 12) hour = 0;
-            const date = new Date(`${yyyy}-${mm}-${dd}T${String(hour).padStart(2, '0')}:${minute}:00`);
-            return isNaN(date.getTime()) ? null : `${yyyy}-${mm}-${dd} ${String(hour).padStart(2, '0')}:${minute}:00`;
-          } catch {
-            return null;
-          }
-        };
-
-        return bidLinks.map((link, i) => {
-          const bid_no = link.innerText.trim();
-          const boq = 'https://bidplus.gem.gov.in' + link.getAttribute('href');
-          const startRaw = startDates[i] || '';
-          const endRaw = endDates[i] || '';
-
-          return {
-            bid_no,
-            boq,
-            start_date: parseDate(startRaw),
-            end_date: parseDate(endRaw),
-          };
-        });
+        return bidLinks.map((link, i) => ({
+          bid_no: link.innerText.trim(),
+          boq: 'https://bidplus.gem.gov.in' + link.getAttribute('href'),
+          start_date: startDates[i] || '',
+          end_date: endDates[i] || ''
+        }));
       });
 
-      bids.push(...pageBids);
+      const formatted = pageBids.map(raw => ({
+        bid_no: raw.bid_no,
+        boq: raw.boq,
+        start_date: parseDate(raw.start_date),
+        end_date: parseDate(raw.end_date),
+      }));
 
-      // Step 8: Click "Next" if more pages remain
-      if (pageNum < totalPages) {
-        const nextBtn = await page.$('a.page-link[aria-label="Next"]');
-        if (!nextBtn) break;
+      // 🔄 Sync current page's bids immediately
+      await syncBidsToSupabase(formatted);
+
+      const nextBtn = await page.$('a.page-link.next');
+      if (nextBtn) {
         await nextBtn.click();
-        await page.waitForTimeout(1000);
+        await delay(1000);
+        currentPage++;
+      } else {
+        break;
       }
     }
 
-  } catch (error) {
-    console.error('Error fetching bids:', error);
-    console.log('Browser left open for inspection.');
-    return [];
+  } catch (err) {
+    console.error('❌ Error scraping:', err);
+    console.log('🔍 Browser left open for inspection.');
   }
 
-  // await browser.close(); // Uncomment when stable
-
-  return bids;
+  await browser.close(); // close even if syncs per page
 }
 
 module.exports = fetchDefenceBids;
