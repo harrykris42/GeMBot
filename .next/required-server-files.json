@@ -96,7 +96,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "/home/h/gem/gem-frontend",
+    "outputFileTracingRoot": "/home/h/GeMBot",
     "experimental": {
       "nodeMiddleware": false,
       "cacheLife": {
@@ -279,10 +279,10 @@
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.ts",
     "turbopack": {
-      "root": "/home/h/gem/gem-frontend"
+      "root": "/home/h/GeMBot"
     }
   },
-  "appDir": "/home/h/gem/gem-frontend",
+  "appDir": "/home/h/GeMBot",
   "relativeAppDir": "",
   "files": [
     ".next/routes-manifest.json",

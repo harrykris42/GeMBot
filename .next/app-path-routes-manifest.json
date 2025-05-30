@@ -1,5 +1,6 @@
 {
   "/_not-found/page": "/_not-found",
+  "/api/sync-csv/route": "/api/sync-csv",
   "/favicon.ico/route": "/favicon.ico",
   "/page": "/"
 }
