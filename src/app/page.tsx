@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
@@ -18,6 +18,7 @@ export default function Home() {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const PAGE_SIZE = 10
+  const loadingRef = useRef(false)
 
   const getTimeFrame = () => {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
@@ -29,9 +30,12 @@ export default function Home() {
   }
 
   const fetchActive = useCallback(async (reset = false) => {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
 
-    const from = reset ? 0 : page * PAGE_SIZE
+    const actualPage = reset ? 0 : page
+    const from = actualPage * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
     const { now, end } = getTimeFrame()
 
@@ -50,13 +54,14 @@ export default function Home() {
         setPage(1)
       } else {
         setBids(prev => [...prev, ...data])
-        setPage(prev => prev + 1)
+        setPage(actualPage + 1)
       }
 
       if (data.length < PAGE_SIZE) setHasMore(false)
     }
 
     setLoading(false)
+    loadingRef.current = false
   }, [page, search])
 
   useEffect(() => {
@@ -65,15 +70,15 @@ export default function Home() {
 
   const handleScroll = useCallback(() => {
     const { scrollTop, clientHeight, scrollHeight } = document.documentElement
-    if (scrollTop + clientHeight >= scrollHeight - 50 && !loading && hasMore) {
+    if (scrollTop + clientHeight >= scrollHeight - 50 && !loadingRef.current && hasMore) {
       fetchActive()
     }
-  }, [loading, hasMore, fetchActive])
+  }, [hasMore, fetchActive])
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [handleScroll, loading, hasMore, fetchActive])
+  }, [handleScroll])
 
   const getTimeLeft = (end: string) => {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
