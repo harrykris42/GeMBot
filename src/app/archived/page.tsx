@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
@@ -15,58 +15,22 @@ export default function ArchivedPage() {
   const [bids, setBids] = useState<Bid[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
-  const PAGE_SIZE = 10
-  const loadingRef = useRef(false)
 
-  const fetchArchived = useCallback(async (reset = false) => {
-    if (loadingRef.current) return
-    loadingRef.current = true
+  const fetchArchived = useCallback(async () => {
     setLoading(true)
-
-    const actualPage = reset ? 0 : page
-    const from = actualPage * PAGE_SIZE
-    const to = from + PAGE_SIZE - 1
-
     const { data, error } = await supabase
       .from('archived_bids')
       .select('*')
       .order('end_date', { ascending: false })
       .ilike('bid_no', `%${search}%`)
-      .range(from, to)
 
-    if (!error && data) {
-      if (reset) {
-        setBids(data)
-        setPage(1)
-      } else {
-        setBids(prev => [...prev, ...data])
-        setPage(actualPage + 1)
-      }
-
-      if (data.length < PAGE_SIZE) setHasMore(false)
-    }
-
+    if (!error && data) setBids(data)
     setLoading(false)
-    loadingRef.current = false
-  }, [page, search])
+  }, [search])
 
   useEffect(() => {
-    fetchArchived(true)
+    fetchArchived()
   }, [search, fetchArchived])
-
-  const handleScroll = useCallback(() => {
-    const { scrollTop, clientHeight, scrollHeight } = document.documentElement
-    if (scrollTop + clientHeight >= scrollHeight - 50 && !loadingRef.current && hasMore) {
-      fetchArchived()
-    }
-  }, [hasMore, fetchArchived])
-
-  useEffect(() => {
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [handleScroll])
 
   return (
     <main className="p-6 font-sans max-w-3xl mx-auto">
@@ -79,11 +43,7 @@ export default function ArchivedPage() {
           type="text"
           placeholder="Search bid number..."
           value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setPage(0)
-            setHasMore(true)
-          }}
+          onChange={(e) => setSearch(e.target.value)}
           className="border px-4 py-2 rounded w-full mr-4"
         />
         <Link
@@ -94,7 +54,7 @@ export default function ArchivedPage() {
         </Link>
       </div>
 
-      {loading && bids.length === 0 ? (
+      {loading ? (
         <p className="text-center text-gray-500">Loading archived bids...</p>
       ) : bids.length === 0 ? (
         <p className="text-center text-gray-500">No archived bids found.</p>
@@ -142,10 +102,6 @@ export default function ArchivedPage() {
             </div>
           ))}
         </div>
-      )}
-
-      {loading && bids.length > 0 && (
-        <p className="text-center text-gray-500 mt-6">Loading more...</p>
       )}
     </main>
   )
