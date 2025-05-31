@@ -11,7 +11,7 @@ type Bid = {
   csv: string | null
 }
 
-export default function Home() {
+export default function ArchivedPage() {
   const [bids, setBids] = useState<Bid[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -19,29 +19,16 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(true)
   const PAGE_SIZE = 10
 
-  const getTimeFrame = () => {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-    const end = new Date(now)
-    const isSaturday = now.getDay() === 6
-    end.setDate(end.getDate() + (isSaturday ? 2 : 1))
-    end.setHours(23, 59, 59, 999)
-    return { now, end }
-  }
-
-  const fetchActive = useCallback(async (reset = false) => {
+  const fetchArchived = useCallback(async (reset = false) => {
     setLoading(true)
-
     const from = reset ? 0 : page * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
-    const { now, end } = getTimeFrame()
 
     const { data, error } = await supabase
-      .from('live_bids')
+      .from('archived_bids')
       .select('*')
-      .gte('end_date', now.toISOString())
-      .lte('end_date', end.toISOString())
+      .order('end_date', { ascending: false })
       .ilike('bid_no', `%${search}%`)
-      .order('end_date', { ascending: true })
       .range(from, to)
 
     if (!error && data) {
@@ -60,46 +47,25 @@ export default function Home() {
   }, [page, search])
 
   useEffect(() => {
-    fetchActive(true)
-  }, [search, fetchActive])
+    fetchArchived(true)
+  }, [search, fetchArchived])
 
   const handleScroll = useCallback(() => {
     const { scrollTop, clientHeight, scrollHeight } = document.documentElement
     if (scrollTop + clientHeight >= scrollHeight - 50 && !loading && hasMore) {
-      fetchActive()
+      fetchArchived()
     }
-  }, [loading, hasMore, fetchActive])
+  }, [loading, hasMore, fetchArchived])
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [handleScroll, loading, hasMore, fetchActive])
-
-  const getTimeLeft = (end: string) => {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-    const endTime = new Date(end)
-    const diffMs = endTime.getTime() - now.getTime()
-    if (diffMs < 0) return 'Expired'
-    const hrs = Math.floor(diffMs / (1000 * 60 * 60))
-    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-    return `in ${hrs}h ${mins}m`
-  }
-
-  const getDayTag = (dateStr: string) => {
-    const date = new Date(dateStr)
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-    if (date.getDate() === now.getDate()) return 'Today'
-    const isSaturday = now.getDay() === 6
-    const tomorrow = new Date(now)
-    tomorrow.setDate(now.getDate() + (isSaturday ? 2 : 1))
-    if (date.getDate() === tomorrow.getDate()) return isSaturday ? 'Monday' : 'Tomorrow'
-    return date.toDateString()
-  }
+  }, [handleScroll, loading, hasMore, fetchArchived])
 
   return (
     <main className="p-6 font-sans max-w-3xl mx-auto">
       <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">
-        🪖 Indian Coast Guard Bids
+        🗃️ Archived Bids
       </h1>
 
       <div className="mb-4 flex justify-between items-center">
@@ -115,23 +81,23 @@ export default function Home() {
           className="border px-4 py-2 rounded w-full mr-4"
         />
         <Link
-          href="/archived"
-          className="px-4 py-2 bg-gray-200 rounded whitespace-nowrap text-sm hover:bg-gray-300"
+          href="/"
+          className="px-4 py-2 bg-blue-600 text-white rounded whitespace-nowrap text-sm hover:bg-blue-700"
         >
-          📦 View Archived
+          🔙 Back
         </Link>
       </div>
 
       {loading && bids.length === 0 ? (
-        <p className="text-center text-gray-500">Loading bids...</p>
+        <p className="text-center text-gray-500">Loading archived bids...</p>
       ) : bids.length === 0 ? (
-        <p className="text-center text-gray-500">No active bids found.</p>
+        <p className="text-center text-gray-500">No archived bids found.</p>
       ) : (
         <div className="grid gap-6">
           {bids.map((bid) => (
             <div
               key={bid.bid_no}
-              className="border rounded-xl p-5 shadow-sm transition bg-white hover:shadow-md"
+              className="border rounded-xl p-5 shadow-sm transition bg-white opacity-70"
             >
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -139,9 +105,9 @@ export default function Home() {
                     📌 Bid No: {bid.bid_no}
                   </p>
                   <p className="text-sm text-gray-500">
-                    Ends {getTimeLeft(bid.end_date)} •{' '}
-                    <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">
-                      {getDayTag(bid.end_date)}
+                    Ended on{' '}
+                    <span className="inline-block px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">
+                      {new Date(bid.end_date).toLocaleString('en-IN')}
                     </span>
                   </p>
                 </div>

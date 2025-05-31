@@ -13,7 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
     "dotenv": "^16.5.0",
-    "node-fetch": "^3.3.2",
+    "pdfjs-dist": "^3.11.174",
     "puppeteer": "^24.9.0"
   }
 }
