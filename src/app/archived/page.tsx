@@ -21,6 +21,7 @@ export default function Archived() {
       const { data, error } = await supabase
         .from('archived_bids')
         .select('*')
+        .not('csv', 'is', null) // ✅ filter only bids with CSV links
         .order('end_date', { ascending: false })
 
       if (!error && data) setBids(data)
@@ -42,7 +43,7 @@ export default function Archived() {
       {loading ? (
         <p className="text-center text-gray-500">Loading archived bids...</p>
       ) : bids.length === 0 ? (
-        <p className="text-center text-gray-500">No archived bids found.</p>
+        <p className="text-center text-gray-500">No archived bids with CSV links found.</p>
       ) : (
         <div className="grid gap-6">
           {bids.map((bid) => (

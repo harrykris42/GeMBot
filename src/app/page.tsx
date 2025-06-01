@@ -18,18 +18,23 @@ export default function Home() {
 
   useEffect(() => {
     const fetchActive = async () => {
-      const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-      const isSaturday = now.getDay() === 6
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+      const tomorrow = new Date(nowIST)
 
-      const tomorrow = new Date(now)
-      tomorrow.setDate(now.getDate() + (isSaturday ? 2 : 1)) // Skip Sunday if Saturday
+      if (nowIST.getDay() === 6) {
+        // Saturday → skip Sunday → show till Monday 11:59 PM
+        tomorrow.setDate(nowIST.getDate() + 2)
+      } else {
+        tomorrow.setDate(nowIST.getDate() + 1)
+      }
       tomorrow.setHours(23, 59, 59, 999)
 
       const { data, error } = await supabase
         .from('live_bids')
         .select('*')
-        .gte('end_date', now.toISOString())
+        .gte('end_date', nowIST.toISOString())
         .lte('end_date', tomorrow.toISOString())
+        .not('csv', 'is', null)
         .order('end_date', { ascending: true })
 
       if (!error && data) setBids(data)
@@ -53,7 +58,7 @@ export default function Home() {
       {loading ? (
         <p className="text-center text-gray-500">Loading bids...</p>
       ) : bids.length === 0 ? (
-        <p className="text-center text-gray-500">No active bids found.</p>
+        <p className="text-center text-gray-500">No active bids with CSV links.</p>
       ) : (
         <div className="grid gap-6">
           {bids.map((bid) => (
