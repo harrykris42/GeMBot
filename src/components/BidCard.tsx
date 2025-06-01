@@ -63,7 +63,7 @@ export default function BidCard({ bid }: Props) {
         {bid.csv && (
           <a
             className="text-green-600 hover:underline"
-            href={`/edit/${encodeURIComponent(bid.bid_no)}`}
+            href={`/edit/${bid.bid_no.replaceAll('/', '-')}`}
           >
             ✏️ Edit CSV
           </a>

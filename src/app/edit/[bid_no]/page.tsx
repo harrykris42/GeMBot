@@ -16,6 +16,8 @@ const BUCKET = 'edited-csvs'
 
 export default function EditCSVPage() {
   const { bid_no } = useParams() as { bid_no: string }
+  const raw_bid_no = bid_no.replaceAll('-', '/') // GEM/2025/B/6216706
+  const safeFilename = bid_no + '.csv' // GEM-2025-B-6216706.csv
   const router = useRouter()
 
   const [rows, setRows] = useState<GridRowsProp>([])
@@ -23,25 +25,33 @@ export default function EditCSVPage() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('Loading CSV...')
 
-  const safeFilename = bid_no.replace(/\//g, '-') + '.csv'
-
   const fetchCsvUrlFromTable = useCallback(async () => {
+    console.log('🔎 Looking up CSV link for:', raw_bid_no)
     const { data, error } = await supabase
       .from('live_bids')
       .select('csv')
-      .eq('bid_no', bid_no)
+      .eq('bid_no', raw_bid_no)
       .single()
 
-    if (error || !data?.csv) throw new Error('CSV link not found in table.')
+    if (error || !data?.csv) throw new Error('❌ CSV link not found in table.')
+    console.log('🌐 Found CSV URL:', data.csv)
     return data.csv
-  }, [bid_no])
+  }, [raw_bid_no])
 
   const uploadToBucket = useCallback(
     async (text: string) => {
-      await supabase.storage.from(BUCKET).upload(safeFilename, text, {
+      console.log(`📤 Uploading to bucket: ${safeFilename}`)
+      const { error } = await supabase.storage.from(BUCKET).upload(safeFilename, text, {
         contentType: 'text/csv',
         upsert: true,
       })
+
+      if (error) {
+        console.error('❌ Supabase upload error:', error)
+        throw error
+      } else {
+        console.log('✅ Uploaded CSV successfully.')
+      }
     },
     [safeFilename]
   )
@@ -75,40 +85,52 @@ export default function EditCSVPage() {
 
   const loadOrDownloadCSV = useCallback(async () => {
     try {
-      setStatus('Checking existing CSV...')
-      const { data: existing } = await supabase.storage.from(BUCKET).download(safeFilename)
+      setStatus('📁 Checking bucket...')
+      console.log('📁 Attempting to download:', safeFilename)
+      const { data: existing, error } = await supabase.storage.from(BUCKET).download(safeFilename)
 
       if (existing) {
         const text = await existing.text()
-        setStatus('Loaded from bucket.')
+        console.log('✅ Loaded from bucket:', safeFilename)
         parseCsv(text)
+        setStatus('Loaded from bucket ✅')
         setLoading(false)
         return
       }
 
-      setStatus('Fetching from external link...')
+      if (error) console.warn('⚠️ No file in bucket. Will fetch from external:', error.message)
+
+      setStatus('🌐 Downloading from source...')
       const externalUrl = await fetchCsvUrlFromTable()
       const response = await fetch(externalUrl)
+
+      if (!response.ok) {
+        throw new Error(`❌ Failed to fetch external CSV: ${response.status} ${response.statusText}`)
+      }
+
       const blob = await response.blob()
       const text = await blob.text()
-
-      parseCsv(text)
+      console.log('📄 Downloaded external CSV.')
 
       const parsedData = Papa.parse(text, { header: true }).data as Record<string, string>[]
       parsedData.forEach((row) => {
         row['RATE(INCL GST)'] = ''
       })
 
-      await uploadToBucket(Papa.unparse(parsedData))
+      const finalCsv = Papa.unparse(parsedData)
 
-      setStatus('Initialized and uploaded to bucket.')
+      await uploadToBucket(finalCsv)
+      console.log('🧾 CSV parsed and uploaded.')
+
+      parseCsv(finalCsv)
+      setStatus('Fetched, parsed, uploaded ✅')
       setLoading(false)
     } catch (err) {
-      console.error(err)
-      setStatus('Failed to load CSV.')
+      console.error('❌ loadOrDownloadCSV error:', err)
+      setStatus('Failed to load CSV ❌')
       setLoading(false)
     }
-  }, [fetchCsvUrlFromTable, uploadToBucket, safeFilename])
+  }, [safeFilename, fetchCsvUrlFromTable, uploadToBucket])
 
   useEffect(() => {
     loadOrDownloadCSV()
@@ -122,15 +144,19 @@ export default function EditCSVPage() {
       setRows(newRows)
       setStatus('Saving...')
 
-      const csvText = Papa.unparse(newRows.map(row => {
+      const csvText = Papa.unparse(newRows.map((row) => {
         const copy = { ...row }
         delete copy.id
         return copy
-        }))
+      }))
 
-      await uploadToBucket(csvText)
-
-      setStatus('All changes saved ✅')
+      try {
+        await uploadToBucket(csvText)
+        setStatus('All changes saved ✅')
+      } catch (err) {
+        setStatus('❌ Failed to save edits.')
+        console.error('❌ Upload error on edit:', err)
+      }
     }
   }
 
