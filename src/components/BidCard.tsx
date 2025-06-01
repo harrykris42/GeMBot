@@ -63,11 +63,9 @@ export default function BidCard({ bid }: Props) {
         {bid.csv && (
           <a
             className="text-green-600 hover:underline"
-            href={bid.csv}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={`/edit/${encodeURIComponent(bid.bid_no)}`}
           >
-            📥 Download CSV
+            ✏️ Edit CSV
           </a>
         )}
       </div>

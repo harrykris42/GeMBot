@@ -9,11 +9,17 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^7.1.0",
+    "@mui/x-data-grid": "^8.5.0",
     "@supabase/supabase-js": "^2.49.8",
     "next": "15.3.2",
     "node-fetch": "^2.7.0",
+    "papaparse": "^5.5.3",
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
+    "react-data-grid": "^7.0.0-beta.55",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
@@ -21,6 +27,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/node-fetch": "^2.6.12",
+    "@types/papaparse": "^5.3.16",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
