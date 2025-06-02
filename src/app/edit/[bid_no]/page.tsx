@@ -136,28 +136,28 @@ export default function EditCSVPage() {
     loadOrDownloadCSV()
   }, [loadOrDownloadCSV])
 
-  const handleEdit = async (params: GridCellEditStopParams) => {
-    const newRows = [...rows]
-    const index = newRows.findIndex((r) => r.id === params.id)
-    if (index !== -1) {
-      newRows[index][params.field] = params.value
-      setRows(newRows)
-      setStatus('Saving...')
+  const handleRowUpdate = async (updatedRow: any) => {
+    const updatedRows = rows.map((row) =>
+      row.id === updatedRow.id ? updatedRow : row
+    )
+    setRows(updatedRows)
+    setStatus('Saving...')
 
-      const csvText = Papa.unparse(newRows.map((row) => {
-        const copy = { ...row }
-        delete copy.id
-        return copy
-      }))
+    const csvText = Papa.unparse(updatedRows.map((row) => {
+      const copy = { ...row }
+      delete copy.id
+      return copy
+    }))
 
-      try {
-        await uploadToBucket(csvText)
-        setStatus('All changes saved ✅')
-      } catch (err) {
-        setStatus('❌ Failed to save edits.')
-        console.error('❌ Upload error on edit:', err)
-      }
+    try {
+      await uploadToBucket(csvText)
+      setStatus('All changes saved ✅')
+    } catch (err) {
+      console.error('❌ Upload error on edit:', err)
+      setStatus('❌ Failed to save edits.')
     }
+
+    return updatedRow
   }
 
   return (
@@ -180,7 +180,7 @@ export default function EditCSVPage() {
           <DataGrid
             rows={rows}
             columns={columns}
-            onCellEditStop={handleEdit}
+            processRowUpdate={handleRowUpdate}
             autoHeight
             disableRowSelectionOnClick
             sx={{ fontSize: 14 }}
