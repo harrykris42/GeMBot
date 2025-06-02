@@ -102,7 +102,7 @@ export default function EditCSVPage() {
 
       setStatus('🌐 Downloading from source...')
       const externalUrl = await fetchCsvUrlFromTable()
-      const response = await fetch(externalUrl)
+      const response = await fetch(`/api/fetch-csv?url=${encodeURIComponent(externalUrl)}`)
 
       if (!response.ok) {
         throw new Error(`❌ Failed to fetch external CSV: ${response.status} ${response.statusText}`)
