@@ -4,10 +4,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Papa from 'papaparse'
-import {
-  DataGrid,
-  GridColDef,
-} from '@mui/x-data-grid'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { DataGrid, GridColDef } from '@mui/x-data-grid'
 
 const BUCKET = 'edited-csvs'
 
@@ -20,6 +19,7 @@ export default function EditCSVPage() {
   const { bid_no } = useParams() as { bid_no: string }
   const raw_bid_no = bid_no.replaceAll('-', '/')
   const safeFilename = bid_no + '.csv'
+  const pdfFilename = bid_no + '.pdf'
   const router = useRouter()
 
   const [rows, setRows] = useState<Row[]>([])
@@ -39,82 +39,87 @@ export default function EditCSVPage() {
   }, [raw_bid_no])
 
   const uploadToBucket = useCallback(
-    async (text: string) => {
-      const { error } = await supabase.storage.from(BUCKET).upload(safeFilename, text, {
-        contentType: 'text/csv',
+    async (bucket: string, filename: string, file: string | Blob) => {
+      const { error } = await supabase.storage.from(bucket).upload(filename, file, {
+        contentType: typeof file === 'string' ? 'text/csv' : 'application/pdf',
         upsert: true,
       })
       if (error) throw error
     },
-    [safeFilename]
+    []
   )
 
-  const parseCsv = useCallback((csvText: string) => {
-    const parsed = Papa.parse(csvText.trim(), { header: true })
-    const headers = parsed.meta.fields || []
-
-    if (!headers.includes('RATE(INCL GST)')) {
-      (parsed.data as Record<string, string>[]).forEach((row) => {
-        row['RATE(INCL GST)'] = ''
-      })
-      headers.push('RATE(INCL GST)')
-    }
-
-    const gridCols: GridColDef[] = headers.map((field) => ({
-      field,
-      headerName: field,
-      flex: 1,
-      editable: true,
-    }))
-
-    const gridRows: Row[] = (parsed.data as Record<string, string>[]).map((row, idx) => ({
-      id: idx,
-      ...row,
-    }))
-
-    setColumns(gridCols)
-    setRows(gridRows)
-  }, [])
+  const exportPdf = (headers: string[], data: string[][]) => {
+    const doc = new jsPDF()
+    autoTable(doc, {
+      head: [headers],
+      body: data,
+    })
+    return doc.output('blob')
+  }
 
   const loadOrDownloadCSV = useCallback(async () => {
     try {
       setStatus('📁 Checking bucket...')
       const { data: existing, error } = await supabase.storage.from(BUCKET).download(safeFilename)
 
+      let csvText: string
+
       if (existing) {
-        const text = await existing.text()
-        parseCsv(text)
+        csvText = await existing.text()
         setStatus('Loaded from bucket ✅')
-        setLoading(false)
-        return
+      } else {
+        const externalUrl = await fetchCsvUrlFromTable()
+        const response = await fetch(`/api/fetch-csv?url=${encodeURIComponent(externalUrl)}`)
+        if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`)
+
+        const blob = await response.blob()
+        csvText = await blob.text()
+        setStatus('Fetched external CSV ✅')
       }
 
-      if (error) console.warn('⚠️ No file in bucket:', error.message)
+      const parsed = Papa.parse(csvText, { header: true })
+      let data = parsed.data as Record<string, string>[]
 
-      const externalUrl = await fetchCsvUrlFromTable()
-      const response = await fetch(`/api/fetch-csv?url=${encodeURIComponent(externalUrl)}`)
+      // Step 2-3: Add "Compliance" column with "YES"
+      data = data.map((row) => ({ ...row, Compliance: 'YES' }))
 
-      if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`)
+      // Step 4: Export full CSV (with Compliance) as PDF
+      const headers = Object.keys(data[0])
+      const pdfData = data.map((row) => headers.map((h) => row[h] || ''))
+      const pdfBlob = exportPdf(headers, pdfData)
+      await uploadToBucket(BUCKET, pdfFilename, pdfBlob)
 
-      const blob = await response.blob()
-      const text = await blob.text()
-
-      const parsedData = Papa.parse(text, { header: true }).data as Record<string, string>[]
-      parsedData.forEach((row) => {
-        row['RATE(INCL GST)'] = row['RATE(INCL GST)'] || ''
+      // Step 5: Modify CSV - remove 2nd, 6th, 7th, 8th cols and add "RATE(INCL GST)"
+      const reduced = data.map((row) => {
+        const keys = Object.keys(row)
+        const removedKeys = [keys[1], keys[5], keys[6], keys[7]]
+        removedKeys.forEach((key) => delete row[key])
+        row['RATE(INCL GST)'] = ''
+        return row
       })
 
-      const finalCsv = Papa.unparse(parsedData)
-      await uploadToBucket(finalCsv)
-      parseCsv(finalCsv)
-      setStatus('Fetched, parsed, uploaded ✅')
+      const finalCsv = Papa.unparse(reduced)
+      await uploadToBucket(BUCKET, safeFilename, finalCsv)
+
+      const gridCols: GridColDef[] = Object.keys(reduced[0] || {}).map((field) => ({
+        field,
+        headerName: field,
+        flex: 1,
+        editable: true,
+      }))
+
+      const gridRows: Row[] = reduced.map((row, idx) => ({ id: idx, ...row }))
+      setColumns(gridCols)
+      setRows(gridRows)
+      setStatus('Final CSV ready ✅')
       setLoading(false)
     } catch (err) {
       console.error(err)
-      setStatus('❌ Failed to load CSV')
+      setStatus('❌ Failed to load/process CSV')
       setLoading(false)
     }
-  }, [safeFilename, fetchCsvUrlFromTable, uploadToBucket, parseCsv])
+  }, [fetchCsvUrlFromTable, safeFilename, pdfFilename, uploadToBucket])
 
   useEffect(() => {
     loadOrDownloadCSV()
@@ -125,13 +130,10 @@ export default function EditCSVPage() {
     setRows(newRows)
     setStatus('Saving...')
 
-    const csvText = Papa.unparse(
-  newRows.map(({ id: _id, ...rest }) => rest)
-)
-
+    const csvText = Papa.unparse(newRows.map(({ id: _id, ...rest }) => rest))
 
     try {
-      await uploadToBucket(csvText)
+      await uploadToBucket(BUCKET, safeFilename, csvText)
       setStatus('All changes saved ✅')
     } catch (err) {
       console.error(err)
@@ -162,7 +164,6 @@ export default function EditCSVPage() {
             rows={rows}
             columns={columns}
             processRowUpdate={handleRowUpdate}
-            
             autoHeight
             disableRowSelectionOnClick
             sx={{ fontSize: 14 }}
