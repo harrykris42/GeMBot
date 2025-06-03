@@ -1,8 +1,0 @@
-{
-  "functions": {
-    "src/app/api/fetch-csv/route.ts": {
-      "runtime": "nodejs18.x"
-    }
-  }
-}
-
