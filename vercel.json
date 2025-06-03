@@ -1,8 +1,0 @@
-{
-  "functions": {
-    "api/fetch-csv/**": {
-      "runtime": "nodejs18.x"
-    }
-  }
-}
-
