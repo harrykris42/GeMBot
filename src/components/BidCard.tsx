@@ -1,4 +1,3 @@
-// src/components/BidCard.tsx
 'use client'
 
 type Bid = {

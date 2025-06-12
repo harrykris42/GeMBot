@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Papa from 'papaparse'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { DataGrid, GridColDef } from '@mui/x-data-grid'
+import debounce from 'lodash.debounce'
 
 const BUCKET = 'edited-csvs'
 
@@ -26,6 +27,8 @@ export default function EditCSVPage() {
   const [columns, setColumns] = useState<GridColDef[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('Loading CSV...')
+
+  const latestRows = useRef<Row[]>([])
 
   const fetchCsvUrlFromTable = useCallback(async () => {
     const { data, error } = await supabase
@@ -58,13 +61,27 @@ export default function EditCSVPage() {
     return doc.output('blob')
   }
 
+  const saveCsvToBucket = useCallback(async (rowData: Row[]) => {
+    const csvText = Papa.unparse(rowData.map(({ id, ...rest }) => rest))
+    try {
+      await uploadToBucket(BUCKET, safeFilename, csvText)
+      setStatus('✅ Auto-saved')
+    } catch (err) {
+      console.error('❌ Auto-save failed', err)
+      setStatus('❌ Auto-save failed')
+    }
+  }, [safeFilename, uploadToBucket])
+
+  const debouncedSave = useRef(debounce((rowsToSave: Row[]) => {
+    saveCsvToBucket(rowsToSave)
+  }, 3000)).current
+
   const loadOrDownloadCSV = useCallback(async () => {
     try {
       setStatus('📁 Checking bucket...')
-      const { data: existing, error } = await supabase.storage.from(BUCKET).download(safeFilename)
+      const { data: existing } = await supabase.storage.from(BUCKET).download(safeFilename)
 
       let csvText: string
-
       if (existing) {
         csvText = await existing.text()
         setStatus('Loaded from bucket ✅')
@@ -72,25 +89,20 @@ export default function EditCSVPage() {
         const externalUrl = await fetchCsvUrlFromTable()
         const response = await fetch(`/api/fetch-csv?url=${encodeURIComponent(externalUrl)}`)
         if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`)
-
-        const blob = await response.blob()
-        csvText = await blob.text()
+        csvText = await response.text()
         setStatus('Fetched external CSV ✅')
       }
 
       const parsed = Papa.parse(csvText, { header: true })
       let data = parsed.data as Record<string, string>[]
 
-      // Step 2-3: Add "Compliance" column with "YES"
       data = data.map((row) => ({ ...row, Compliance: 'YES' }))
 
-      // Step 4: Export full CSV (with Compliance) as PDF
       const headers = Object.keys(data[0])
       const pdfData = data.map((row) => headers.map((h) => row[h] || ''))
       const pdfBlob = exportPdf(headers, pdfData)
       await uploadToBucket(BUCKET, pdfFilename, pdfBlob)
 
-      // Step 5: Modify CSV - remove 2nd, 6th, 7th, 8th cols and add "RATE(INCL GST)"
       const reduced = data.map((row) => {
         const keys = Object.keys(row)
         const removedKeys = [keys[1], keys[5], keys[6], keys[7]]
@@ -110,6 +122,7 @@ export default function EditCSVPage() {
       }))
 
       const gridRows: Row[] = reduced.map((row, idx) => ({ id: idx, ...row }))
+      latestRows.current = gridRows
       setColumns(gridCols)
       setRows(gridRows)
       setStatus('Final CSV ready ✅')
@@ -128,20 +141,36 @@ export default function EditCSVPage() {
   const handleRowUpdate = async (updatedRow: Row) => {
     const newRows = rows.map((r) => (r.id === updatedRow.id ? updatedRow : r))
     setRows(newRows)
-    setStatus('Saving...')
-
-    const csvText = Papa.unparse(newRows.map(({ id: _id, ...rest }) => rest))
-
+    latestRows.current = newRows
+    setStatus('💾 Saving...')
     try {
-      await uploadToBucket(BUCKET, safeFilename, csvText)
-      setStatus('All changes saved ✅')
+      await saveCsvToBucket(newRows)
+      setStatus('✅ Saved')
     } catch (err) {
       console.error(err)
-      setStatus('❌ Failed to save edits.')
+      setStatus('❌ Save failed')
     }
-
     return updatedRow
   }
+
+  // Debounced auto-save on rows change
+  useEffect(() => {
+    if (rows.length > 0) debouncedSave(rows)
+  }, [rows])
+
+  // Save on tab close
+  useEffect(() => {
+    const handler = () => {
+      const csvText = Papa.unparse(latestRows.current.map(({ id, ...rest }) => rest))
+      navigator.sendBeacon(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${BUCKET}/${safeFilename}`,
+        new Blob([csvText], { type: 'text/csv' })
+      )
+    }
+
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
 
   return (
     <main className="p-6 max-w-[1400px] mx-auto font-sans text-white bg-black min-h-screen">
@@ -164,6 +193,10 @@ export default function EditCSVPage() {
             rows={rows}
             columns={columns}
             processRowUpdate={handleRowUpdate}
+            onProcessRowUpdateError={(err) => {
+              console.error(err)
+              setStatus('❌ Error saving row.')
+            }}
             autoHeight
             disableRowSelectionOnClick
             sx={{ fontSize: 14 }}
