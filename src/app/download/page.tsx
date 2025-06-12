@@ -1,5 +1,4 @@
 // This file runs server-side and immediately redirects to download the CSV file
-import { NextResponse } from 'next/server';
 import { redirect } from 'next/navigation';
 
 export default function Page() {
