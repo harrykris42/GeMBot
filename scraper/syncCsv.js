@@ -35,9 +35,20 @@ function formatFileName(bid_no, ext = 'csv') {
 async function downloadPDF(url, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36',
+          'Accept': 'application/pdf',
+        },
+      });
       if (!res.ok) throw new Error(`Failed to download PDF: ${res.statusText}`);
       const buffer = await res.arrayBuffer();
+
+      // Optional: check for HTML instead of PDF
+      const sig = Buffer.from(buffer).slice(0, 5).toString();
+      if (!sig.startsWith('%PDF-')) throw new Error('Downloaded file is not a PDF');
+
       const tmpPath = path.join(os.tmpdir(), `boq_${Date.now()}.pdf`);
       await fs.writeFile(tmpPath, Buffer.from(buffer));
       return tmpPath;
@@ -62,9 +73,16 @@ async function extractCsvFromPDF(pdfPath) {
 }
 
 async function downloadCsvBuffer(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      'Referer': 'https://bidplus.gem.gov.in/',
+      'Origin': 'https://bidplus.gem.gov.in/'
+    }
+  });
   if (!res.ok) throw new Error(`CSV download failed: ${res.statusText}`);
-  return Buffer.from(await res.arrayBuffer());
+  const buffer = await res.arrayBuffer();
+  return Buffer.from(buffer);
 }
 
 function csvToHtmlTable(csvText) {
@@ -263,9 +281,7 @@ async function syncCsvLinks() {
 
       const keys = Object.keys(parsed.data[0]);
       const cleaned = parsed.data.map(row => ({
-        [keys[0]]: row[keys[0]],
         [keys[1]]: row[keys[1]],
-        [keys[3]]: row[keys[3]],
         [keys[4]]: row[keys[4]],
         "RATE(INCL GST)": ""
       }));

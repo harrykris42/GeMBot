@@ -1,14 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.typetech.gembids">
-
-    <uses-permission android:name="android.permission.INTERNET"/>
+    package="com.gembot">
 
     <application
-        android:theme="@style/Theme.GemBids"
-        android:label="Gem Bids"
-        android:icon="@mipmap/ic_launcher">
-        <activity
-            android:name=".MainActivity"
+        android:name=".GeMBotApp"
+        android:label="GeMBot"
+        android:theme="@style/Theme.GeMBot">
+        <activity android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -16,4 +13,5 @@
             </intent-filter>
         </activity>
     </application>
+
 </manifest>
