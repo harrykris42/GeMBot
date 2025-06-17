@@ -141,7 +141,7 @@ export default function EditCSVPage() {
     const { error } = await supabase
       .from('live_bids')
       .update({ status: 'SUBMITTING' })
-      .eq('bid_no', raw_bid_no)
+      .ilike('bid_no', `%${bid_no.split('-').pop()}%`)
 
     if (error) {
       console.error(error)
