@@ -7,8 +7,7 @@ import Papa from 'papaparse'
 import { DataGrid, GridColDef } from '@mui/x-data-grid'
 import debounce from 'lodash.debounce'
 
-const BUCKET_EDITED = 'edited-csvs'
-const BUCKET_SUBMITTED = 'submitted-csvs'
+const BUCKET = 'edited-csvs'
 
 type Row = {
   id: number
@@ -25,6 +24,7 @@ export default function EditCSVPage() {
   const [columns, setColumns] = useState<GridColDef[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('Loading CSV...')
+  const [saving, setSaving] = useState(false)
 
   const idleTimer = useRef<NodeJS.Timeout | null>(null)
 
@@ -42,7 +42,7 @@ export default function EditCSVPage() {
   const uploadCsvToBucket = useCallback(
     async (csvText: string) => {
       const { error } = await supabase.storage
-        .from(BUCKET_EDITED)
+        .from(BUCKET)
         .upload(safeFilename, csvText, {
           contentType: 'text/csv',
           upsert: true,
@@ -57,11 +57,14 @@ export default function EditCSVPage() {
     debounce(async (rowsToSave: Row[]) => {
       const csvText = Papa.unparse(rowsToSave.map(({ id: _id, ...rest }) => rest))
       try {
+        setSaving(true)
         await uploadCsvToBucket(csvText)
         setStatus('✅ Auto-saved')
       } catch (err) {
         console.error(err)
         setStatus('❌ Failed to auto-save')
+      } finally {
+        setSaving(false)
       }
     }, 2000)
   ).current
@@ -69,7 +72,7 @@ export default function EditCSVPage() {
   const loadCsv = useCallback(async () => {
     try {
       setStatus('📁 Checking bucket...')
-      const { data: existing, error: _eroor } = await supabase.storage.from(BUCKET_EDITED).download(safeFilename)
+      const { data: existing, error: _eroor } = await supabase.storage.from(BUCKET).download(safeFilename)
 
       let csvText: string
 
@@ -114,6 +117,7 @@ export default function EditCSVPage() {
     const newRows = rows.map((r) => (r.id === updatedRow.id ? updatedRow : r))
     setRows(newRows)
     setStatus('💾 Saving...')
+    setSaving(true)
 
     const csvText = Papa.unparse(newRows.map(({ id: _id, ...rest }) => rest))
 
@@ -123,9 +127,30 @@ export default function EditCSVPage() {
     } catch (err) {
       console.error(err)
       setStatus('❌ Failed to save edit')
+    } finally {
+      setSaving(false)
     }
 
     return updatedRow
+  }
+
+  const handleSubmit = async () => {
+    setStatus('📤 Submitting...')
+    setSaving(true)
+
+    const { error } = await supabase
+      .from('live_bids')
+      .update({ status: 'SUBMITTING' })
+      .eq('bid_no', raw_bid_no)
+
+    if (error) {
+      console.error(error)
+      setStatus('❌ Failed to mark as SUBMITTING')
+    } else {
+      setStatus('✅ Marked as SUBMITTING')
+    }
+
+    setSaving(false)
   }
 
   // Idle save every 10 seconds
@@ -140,34 +165,6 @@ export default function EditCSVPage() {
     }
   }, [rows, loading, saveDebounced])
 
-  const handleSubmit = async () => {
-    setStatus('🚀 Submitting CSV...')
-
-    try {
-      const { data: file, error: downloadError } = await supabase.storage
-        .from(BUCKET_EDITED)
-        .download(safeFilename)
-
-      if (downloadError || !file) throw new Error('Failed to download file for submission')
-
-      const csvText = await file.text()
-
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET_SUBMITTED)
-        .upload(safeFilename, csvText, {
-          contentType: 'text/csv',
-          upsert: true,
-        })
-
-      if (uploadError) throw new Error('Failed to upload to submitted bucket')
-
-      setStatus('✅ Submitted successfully')
-    } catch (err) {
-      console.error(err)
-      setStatus('❌ Submission failed')
-    }
-  }
-
   return (
     <main className="p-6 max-w-[1400px] mx-auto font-sans text-white bg-black min-h-screen">
       <div className="mb-6 flex justify-between items-center gap-4 flex-wrap">
@@ -181,7 +178,12 @@ export default function EditCSVPage() {
           <p className="text-green-400 text-sm">{status}</p>
           <button
             onClick={handleSubmit}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-1.5 rounded shadow"
+            disabled={saving}
+            className={`text-white text-sm px-4 py-1.5 rounded shadow transition ${
+              saving
+                ? 'bg-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
           >
             📤 Submit CSV
           </button>
