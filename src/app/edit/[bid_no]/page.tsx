@@ -25,6 +25,7 @@ export default function EditCSVPage() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('Loading CSV...')
   const [saving, setSaving] = useState(false)
+  const [currentStatus, setCurrentStatus] = useState<string | null>(null)
 
   const idleTimer = useRef<NodeJS.Timeout | null>(null)
 
@@ -72,10 +73,9 @@ export default function EditCSVPage() {
   const loadCsv = useCallback(async () => {
     try {
       setStatus('📁 Checking bucket...')
-      const { data: existing, error: _eroor } = await supabase.storage.from(BUCKET).download(safeFilename)
+      const { data: existing } = await supabase.storage.from(BUCKET).download(safeFilename)
 
       let csvText: string
-
       if (existing) {
         csvText = await existing.text()
         setStatus('✅ Loaded from bucket')
@@ -86,6 +86,15 @@ export default function EditCSVPage() {
         csvText = await response.text()
         setStatus('✅ Fetched external CSV')
       }
+
+      // Fetch bid status
+      const { data: bidRow } = await supabase
+        .from('live_bids')
+        .select('status')
+        .eq('bid_no', raw_bid_no)
+        .single()
+
+      setCurrentStatus(bidRow?.status || null)
 
       const parsed = Papa.parse(csvText, { header: true })
       const data = parsed.data as Record<string, string>[]
@@ -107,7 +116,7 @@ export default function EditCSVPage() {
       setStatus('❌ Failed to load CSV')
       setLoading(false)
     }
-  }, [fetchCsvUrlFromTable, safeFilename])
+  }, [fetchCsvUrlFromTable, raw_bid_no, safeFilename])
 
   useEffect(() => {
     loadCsv()
@@ -135,19 +144,23 @@ export default function EditCSVPage() {
   }
 
   const handleSubmit = async () => {
-    setStatus('📤 Submitting...')
     setSaving(true)
+
+    const newStatus = currentStatus === 'SUBMITTING' ? 'AWAITING' : 'SUBMITTING'
+    const label = newStatus === 'SUBMITTING' ? '📤 Submitting...' : '↩️ Unsubmitting...'
+    setStatus(label)
 
     const { error } = await supabase
       .from('live_bids')
-      .update({ status: 'SUBMITTING' })
-      .ilike('bid_no', `%${bid_no.split('-').pop()}%`)
+      .update({ status: newStatus })
+      .eq('bid_no', raw_bid_no)
 
     if (error) {
       console.error(error)
-      setStatus('❌ Failed to mark as SUBMITTING')
+      setStatus(`❌ Failed to update to ${newStatus}`)
     } else {
-      setStatus('✅ Marked as SUBMITTING')
+      setCurrentStatus(newStatus)
+      setStatus(`✅ Marked as ${newStatus}`)
     }
 
     setSaving(false)
@@ -182,10 +195,12 @@ export default function EditCSVPage() {
             className={`text-white text-sm px-4 py-1.5 rounded shadow transition ${
               saving
                 ? 'bg-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
+                : currentStatus === 'SUBMITTING'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            📤 Submit CSV
+            {currentStatus === 'SUBMITTING' ? '↩️ Unsubmit' : '📤 Submit CSV'}
           </button>
         </div>
       </div>
